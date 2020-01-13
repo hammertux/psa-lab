@@ -1,6 +1,8 @@
-/* Questions for lab:
-- data, bytes or 32bit words per line?
-- if cache line is empty, is it a cache hit or miss?
+/* Report stuff
+- data, bytes or 32bit words per line -- design choice, it's fine.
+- valid/invalid implicit because only at startup for this lab.
+- cache-mem signals
+- mention lru design
 */
 
 #include <systemc>
@@ -10,17 +12,33 @@
 #include <iterator>
 #include <algorithm>
 #include <exception>
+#include <cmath>
 
 #include "psa.h"
 
-#define SET_SIZE 8
+
 #define CACHE_LINE_SIZE 32
 #define CACHE_SIZE (1 << 15) //32KB
-#define TOTAL_SETS 128 //((CACHE_SIZE / CACHE_LINE_SIZE) / SET_SIZE)
-#define TOTAL_CACHE_LINES (1 << 10) //1024
+#define SET_SIZE 32
+#define TOTAL_SETS ((CACHE_SIZE / CACHE_LINE_SIZE) / SET_SIZE)
+#define TOTAL_CACHE_LINES (CACHE_SIZE / CACHE_LINE_SIZE)
 #define MEM_LATENCY_CYCLES 100
 #define CACHE_LATENCY_CYCLES 1
 #define CPUID 0
+
+//for testing
+
+#define BYTE_OFF_DM_BITS 5
+#define SET_ADDR_DM_BITS 10
+#define TAG_DM_BITS 17
+
+#define BYTE_OFF_N_WAY_BITS 5
+#define SET_ADDR_N_WAY_BITS ( (int)(log2((double) (TOTAL_CACHE_LINES / SET_SIZE))) )
+#define TAG_N_WAY_BITS (32 - (SET_ADDR_N_WAY_BITS + BYTE_OFF_N_WAY_BITS))
+
+#define BYTE_OFF_FA_BITS 5
+#define SET_ADDR_FA_BITS 0
+#define TAG_FA_BITS 27
 
 #define UPDATE_TAG(s, l, a)   \
     s.at(l).tag = a.tag        
@@ -37,9 +55,9 @@ static const int MEM_SIZE = 512;
 
 typedef union __addr{ //to avoid bitmasking and uses only the 4 bytes of the address, no extra vars needed
     struct {
-        uint32_t byte_offset:5;
-        uint32_t set_addr:7;
-        uint32_t tag:20;
+        uint32_t byte_offset:BYTE_OFF_N_WAY_BITS;
+        uint32_t set_addr:SET_ADDR_N_WAY_BITS;
+        uint32_t tag:TAG_N_WAY_BITS;
     }__attribute((packed, aligned(4))); //make sure it's no bigger than 4B and aligns to 4B boundary
     uint32_t memory_addr;
 } cache_addr_t;
@@ -47,7 +65,8 @@ typedef union __addr{ //to avoid bitmasking and uses only the 4 bytes of the add
 typedef struct __line {
     std::array<uint8_t, CACHE_LINE_SIZE> line;
     struct{
-        int32_t tag; //need only 20bits, extra 12 will be useful in the next labs for state.
+        uint32_t valid:1;
+        uint32_t tag:31; //need only 20bits, extra 12 will be useful in the next labs for state.
         uint32_t lru_age; // lru counter. Assuming no cache line will stay for >2^32 accesses as unused.
     };
     inline bool operator<(const struct __line& line) const {
@@ -104,7 +123,8 @@ SC_MODULE(Cache) {
             for(auto& set : *(cache.get())) {
                 for(auto& line : set) {
                     line.line = {};
-                    line.tag = -1;
+                    line.tag = 0;
+                    line.valid = 0;
                     line.lru_age = 0;
                 }
             }
@@ -171,7 +191,7 @@ inline int8_t Cache::is_hit(const cache_addr_t& addr) const
     int8_t hit = -1; //if no hit, return -1 to evict lru cache line
     for(int8_t i = 0; i < SET_SIZE; ++i) {
         std::cout << "Comparing line tag: " << cache_p->at(addr.set_addr).at(i).tag << " -- Addr tag: " << addr.tag << std::endl;
-        if((cache_p->at(addr.set_addr).at(i).tag == addr.tag)){// || (cache_p->at(addr.set_addr).at(i).lru_age == 0)) {
+        if((cache_p->at(addr.set_addr).at(i).tag == addr.tag) && cache_p->at(addr.set_addr).at(i).valid != 0){
             std::cout << "Cache hit :)\n";
             hit = i;
             break;
@@ -208,6 +228,7 @@ Cache::CacheRetCode Cache::write(const cache_addr_t& addr, set_t& set, uint8_t d
         evict_entry(addr, set.at(lru_index));
         PUT_DATA(set, lru_index, addr, data);
         UPDATE_TAG(set, lru_index, addr);
+        set.at(lru_index).valid = 1;
         increment_age(set, set.at(lru_index));
         goto out_miss;
     }
@@ -244,6 +265,7 @@ Cache::CacheRetCode Cache::read(const cache_addr_t& addr, set_t& set)
         evict_entry(addr, set.at(lru_index));
         data = GET_DATA(set, lru_index, addr);
         UPDATE_TAG(set, lru_index, addr);
+        set.at(lru_index).valid = 1;
         std::cout << data << std::endl;
         port_data.write(data);
         increment_age(set, set.at(lru_index));
@@ -266,7 +288,6 @@ void Cache::execute()
 {   
     auto cache_p = cache.get();
     cache_addr_t addr;
-    set_t set;
     Function func;
     uint8_t data;
     
@@ -312,9 +333,9 @@ public:
 
     sc_in<bool>     Port_CLK;
     sc_in<Function> Port_Func;
-    sc_in<int>      Port_Addr;
+    sc_in<uint32_t>      Port_Addr;
     sc_out<RetCode> Port_Done;
-    sc_inout_rv<32> Port_Data;
+    sc_inout_rv<8> Port_Data;
 
     SC_CTOR(Memory)
     {
@@ -496,8 +517,8 @@ int sc_main(int argc, char* argv[])
 
         sc_buffer<Memory::Function> sigMemFunc;
         sc_buffer<Memory::RetCode>  sigMemDone;
-        sc_signal<int>              sigMemAddr;
-        sc_signal_rv<32>            sigMemData;
+        sc_signal<uint32_t>              sigMemAddr;
+        sc_signal_rv<8>            sigMemData;
 
         // The clock that will drive the CPU and Memory
         sc_clock clk;
@@ -529,6 +550,7 @@ int sc_main(int argc, char* argv[])
         sc_start();
 
         // Print statistics after simulation finished
+        std::cout << "N_WAY_SET = " << SET_ADDR_N_WAY_BITS << std::endl;
         stats_print();
     }
 

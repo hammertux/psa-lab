@@ -7,20 +7,21 @@
 #include <iostream>
 #include <array>
 #include <memory>
-#include <iterator>
 #include <algorithm>
 #include <exception>
+#include <sstream>
 
 #include "psa.h"
 
 #define SET_SIZE 8
 #define CACHE_LINE_SIZE 32
 #define CACHE_SIZE (1 << 15) //32KB
-#define TOTAL_SETS 128 //((CACHE_SIZE / CACHE_LINE_SIZE) / SET_SIZE)
+#define TOTAL_SETS ((CACHE_SIZE / CACHE_LINE_SIZE) / SET_SIZE)
 #define TOTAL_CACHE_LINES (1 << 10) //1024
 #define MEM_LATENCY_CYCLES 100
 #define CACHE_LATENCY_CYCLES 1
 #define CPUID 0
+#define LOG_ID 42
 
 #define UPDATE_TAG(s, l, a)   \
     s.at(l).tag = a.tag        
@@ -195,6 +196,11 @@ SC_MODULE(Cache) {
             SC_THREAD(execute);
             sensitive << port_clk.pos();
             dont_initialize();
+            sc_report::register_id(LOG_ID, "[SC_LOG] ");
+            sc_report_handler::set_actions (SC_ID_VECTOR_CONTAINS_LOGIC_VALUE_,
+                                SC_DO_NOTHING);
+            sc_report_handler::set_actions( "/IEEE_Std_1666/deprecated",
+                                SC_DO_NOTHING );
             
         }
 
@@ -253,13 +259,17 @@ inline int8_t Cache::is_hit(const cache_addr_t& addr) const
 {
     auto cache_p = cache.get();
     int8_t hit = -1; //if no hit, return -1 to evict lru cache line
+    std::ostringstream log;
     for(int8_t i = 0; i < SET_SIZE; ++i) {
-        std::cout << "Comparing line tag: " << cache_p->at(addr.set_addr).at(i).tag << " -- Addr tag: " << addr.tag << std::endl;
-        if((cache_p->at(addr.set_addr).at(i).tag == addr.tag)){// || (cache_p->at(addr.set_addr).at(i).lru_age == 0)) {
-            std::cout << "Cache hit :)\n";
+        log << "Comparing line tag: " << cache_p->at(addr.set_addr).at(i).tag << " -- Addr tag: " << addr.tag;
+        SC_REPORT_INFO(LOG_ID, log.str().c_str());
+        if((cache_p->at(addr.set_addr).at(i).tag == addr.tag)){
+            SC_REPORT_INFO(LOG_ID, "Cache Hit");
             hit = i;
             break;
         }
+        log.str("");
+        log.clear();
     }
 
     return hit;
@@ -279,15 +289,14 @@ Cache::CacheRetCode Cache::write(const cache_addr_t& addr, set_t& set, uint8_t d
     unsigned int lru_index = get_lru_index(set);
 
     if(line_index != -1) {
-        std::cout << "Cache write hit\n";
+        SC_REPORT_INFO(LOG_ID, "Cache write hit");
         retv = CACHE_HIT;
-        //set.at(line_index).line.at(addr.byte_offset) = data;
         PUT_DATA(set, line_index, addr, data);
         increment_age(set, set.at(line_index));
         goto out_hit;
     }
     else {
-        std::cout << "cache write miss\n";
+        SC_REPORT_INFO(LOG_ID, "Cache write miss");
         retv = CACHE_MISS;
         evict_entry(addr, set.at(lru_index));
         PUT_DATA(set, lru_index, addr, data);
@@ -315,7 +324,7 @@ Cache::CacheRetCode Cache::read(const cache_addr_t& addr, set_t& set)
     uint8_t data;
 
     if((line_index = is_hit(addr)) != -1) {
-        std::cout << "cache read hit\n";
+        SC_REPORT_INFO(LOG_ID, "Cache read hit");
         retv = CACHE_HIT;
         data = GET_DATA(set, line_index, addr);
         port_data.write(data);
@@ -323,12 +332,11 @@ Cache::CacheRetCode Cache::read(const cache_addr_t& addr, set_t& set)
         goto out_hit;
     }
     else {
-        std::cout << "cache read miss\n";
+        SC_REPORT_INFO(LOG_ID, "Cache read miss");
         retv = CACHE_MISS;
         evict_entry(addr, set.at(lru_index));
         data = GET_DATA(set, lru_index, addr);
         UPDATE_TAG(set, lru_index, addr);
-        std::cout << data << std::endl;
         port_data.write(data);
         increment_age(set, set.at(lru_index));
         goto out_miss;
@@ -352,27 +360,32 @@ void Cache::execute()
     cache_addr_t addr;
     Function func;
     uint8_t data;
+    std::ostringstream log;
     
     while(1) {
         wait(port_func.value_changed_event());
+        SC_REPORT_INFO(LOG_ID, "\nReceived Function Signal!\n");
         func = port_func.read();
         addr.memory_addr = port_addr.read();
         data = 0;
-        std::cout << "Tag: " << addr.tag << " -- Set: " << addr.set_addr << " -- Offset: " << addr.byte_offset << std::endl;
+        log << "Tag: " << addr.tag << " -- Set: " << addr.set_addr << " -- Offset: " << addr.byte_offset;
+        SC_REPORT_INFO(LOG_ID, log.str().c_str());
         if(func == FUNC_WRITE) {
-            std::cout << "Executing Cache Write\n";
+            SC_REPORT_INFO(LOG_ID, "Executing Cache Write");
             data = static_cast<uint8_t>(port_data.read().to_int());
             this->write(addr, cache_p->at(addr.set_addr), data);
             port_done.write(RET_WRITE);
         }
         else if(func == FUNC_READ) {
-            std::cout << "Executing Cache Read\n";
+            SC_REPORT_INFO(LOG_ID, "Executing Cache Read");
             this->read(addr, cache_p->at(addr.set_addr));
             port_done.write(RET_READ);
         }
         else {
             throw std::runtime_error("Unknown Function");
         }
+        log.str("");
+        log.clear();
     }
 
 }
@@ -437,7 +450,6 @@ private:
 
             if(tr_data.type != TraceFile::ENTRY_TYPE_NOP)
             {
-                std::cout << "CPU ADDR: " << tr_data.addr << std::endl;
                 Port_MemAddr.write(tr_data.addr);
                 Port_MemFunc.write(f);
 
@@ -459,7 +471,6 @@ private:
 
                 if (f == Cache::FUNC_READ)
                 {
-                    std::cout << "Reaches here" << std::endl;
                     std::cout << sc_time_stamp() << ": CPU reads: " << Port_MemData.read() << std::endl;
                 }
             }
@@ -544,7 +555,7 @@ int sc_main(int argc, char* argv[])
 
     catch (std::exception& e)
     {
-        std::cerr << e.what() << std::endl;
+        SC_REPORT_ERROR(LOG_ID, e.what());
     }
 
     return 0;

@@ -31,7 +31,6 @@
 #define GET_DATA(s, l, a)     \
     s.at(l).line.at(a.byte_offset)
 
-
 using namespace sc_core; // This pollutes namespace, better: only import what you need.
 
 static const int MEM_SIZE = 512;
@@ -80,15 +79,21 @@ SC_MODULE(Cache) {
             CACHE_HIT,
             CACHE_MISS
         };
+
         enum Function {
             FUNC_READ,
             FUNC_WRITE
         };
 
+        enum FuncRetCode {
+            RET_READ,
+            RET_WRITE
+        };
+
         sc_in<bool> port_clk;
         sc_in<Function> port_func;
         sc_in<uint32_t> port_addr;
-        sc_out<CacheRetCode> port_done;
+        sc_out<FuncRetCode> port_done;
         sc_inout_rv<8> port_data;
 
         SC_CTOR(Cache) : cache(new std::array<set_t, TOTAL_SETS>)
@@ -163,7 +168,7 @@ void Cache::increment_age(set_t& set, cache_line_t& last_used_line) const
 inline int8_t Cache::is_hit(const cache_addr_t& addr) const
 {
     auto cache_p = cache.get();
-    int8_t hit = -1;
+    int8_t hit = -1; //if no hit, return -1 to evict lru cache line
     for(int8_t i = 0; i < SET_SIZE; ++i) {
         std::cout << "Comparing line tag: " << cache_p->at(addr.set_addr).at(i).tag << " -- Addr tag: " << addr.tag << std::endl;
         if((cache_p->at(addr.set_addr).at(i).tag == addr.tag)){// || (cache_p->at(addr.set_addr).at(i).lru_age == 0)) {
@@ -270,30 +275,20 @@ void Cache::execute()
         func = port_func.read();
         addr.memory_addr = port_addr.read();
         data = 0;
-        //
-        std::cout << "Func: " << func << std::endl;
         std::cout << "Tag: " << addr.tag << " -- Set: " << addr.set_addr << " -- Offset: " << addr.byte_offset << std::endl;
         if(func == FUNC_WRITE) {
             std::cout << "Executing Cache Write\n";
             data = static_cast<uint8_t>(port_data.read().to_int());
-            
             this->write(addr, cache_p->at(addr.set_addr), data);
-            port_done.write(CACHE_MISS);//this->write(addr, set, data));
+            port_done.write(RET_WRITE);
         }
         else if(func == FUNC_READ) {
             std::cout << "Executing Cache Read\n";
-            
             this->read(addr, cache_p->at(addr.set_addr));
-            port_done.write(CACHE_HIT);//this->read(addr, set));
-            //port_done.write(CACHE_HIT);
-            //port_data.write("ZZZZZZZZ");
+            port_done.write(RET_READ);
         }
         else {
             throw std::runtime_error("Unknown Function");
-        }
-
-        for(const auto& line : set) {
-            std::cout << "Line " << &line - &set.at(0) << " has Age: " << line.lru_age << std::endl;
         }
     }
 
@@ -384,7 +379,7 @@ SC_MODULE(CPU)
 
 public:
     sc_in<bool>                Port_CLK;
-    sc_in<Cache::CacheRetCode>   Port_MemDone;
+    sc_in<Cache::FuncRetCode>   Port_MemDone;
     sc_out<Cache::Function> Port_MemFunc;
     sc_out<uint32_t>                Port_MemAddr;
     sc_inout_rv<8>            Port_MemData;
@@ -495,7 +490,7 @@ int sc_main(int argc, char* argv[])
 
         // Signals
         sc_buffer<Cache::Function> sigCacheFunc;
-        sc_buffer<Cache::CacheRetCode>  sigCacheDone;
+        sc_buffer<Cache::FuncRetCode>  sigCacheDone;
         sc_signal<uint32_t>              sigCacheAddr;
         sc_signal_rv<8>            sigCacheData;
 

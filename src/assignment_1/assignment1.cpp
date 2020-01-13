@@ -60,7 +60,85 @@ typedef struct __line {
 
 typedef std::array<cache_line_t, SET_SIZE> set_t;
 
+SC_MODULE(Memory)
+{
 
+public:
+    enum Function
+    {
+        FUNC_READ,
+        FUNC_WRITE
+    };
+ 
+    enum RetCode
+    {
+        RET_READ_DONE,
+        RET_WRITE_DONE,
+    };
+
+    sc_in<bool>     Port_CLK;
+    sc_in<Function> Port_Func;
+    sc_in<uint32_t>      Port_Addr;
+    sc_out<RetCode> Port_Done;
+    sc_inout_rv<8> Port_Data;
+
+    SC_CTOR(Memory)
+    {
+        SC_THREAD(execute);
+        sensitive << Port_CLK.pos(); //sensitive to rising edge of clock
+        dont_initialize();
+
+        m_data = new int[MEM_SIZE];
+    }
+
+    ~Memory()
+    {
+        delete[] m_data;
+    }
+
+private:
+    int* m_data;
+
+    void execute()
+    {
+        while (true)
+        {
+            wait(Port_Func.value_changed_event());
+
+            Function f = Port_Func.read();
+            int addr   = Port_Addr.read();
+            int data   = 0;
+            if (f == FUNC_WRITE)
+            {
+                std::cout << sc_time_stamp() << ": MEM received write" << std::endl;
+                data = Port_Data.read().to_int();
+            }
+            else
+            {
+                std::cout << sc_time_stamp() << ": MEM received read" << std::endl;
+            }
+
+            // This simulates memory read/write delay
+            wait(99);
+
+            if (f == FUNC_READ)
+            {
+                Port_Data.write( (addr < MEM_SIZE) ? m_data[addr] : 0 );
+                Port_Done.write( RET_READ_DONE );
+                wait();
+                Port_Data.write("ZZZZZZZZ");
+            }
+            else
+            {
+                if (addr < MEM_SIZE)
+                {
+                    m_data[addr] = data;
+                }
+                Port_Done.write( RET_WRITE_DONE );
+            }
+        }
+    }
+};
 
 SC_MODULE(Cache) {
     private:
@@ -95,6 +173,12 @@ SC_MODULE(Cache) {
         sc_in<uint32_t> port_addr;
         sc_out<FuncRetCode> port_done;
         sc_inout_rv<8> port_data;
+
+        //memory ports
+        sc_in<Memory::RetCode>     port_mem_done;
+        sc_out<Memory::Function>   port_mem_func;
+        sc_out<uint32_t>                port_mem_addr;
+        sc_inout_rv<8>            port_mem_data;
 
         SC_CTOR(Cache) : cache(new std::array<set_t, TOTAL_SETS>)
         {
@@ -184,7 +268,7 @@ inline int8_t Cache::is_hit(const cache_addr_t& addr) const
 __always_inline void Cache::evict_entry(const cache_addr_t& addr, cache_line_t& evict_line) const
 {
     for(auto& byte : evict_line.line) {
-        byte = 0x42; //just replace with random data as we only simulate loads/stores
+        byte = 0x42; 
     }
 }
 
@@ -266,7 +350,6 @@ void Cache::execute()
 {   
     auto cache_p = cache.get();
     cache_addr_t addr;
-    set_t set;
     Function func;
     uint8_t data;
     
@@ -294,85 +377,7 @@ void Cache::execute()
 
 }
 
-SC_MODULE(Memory)
-{
 
-public:
-    enum Function
-    {
-        FUNC_READ,
-        FUNC_WRITE
-    };
- 
-    enum RetCode
-    {
-        RET_READ_DONE,
-        RET_WRITE_DONE,
-    };
-
-    sc_in<bool>     Port_CLK;
-    sc_in<Function> Port_Func;
-    sc_in<int>      Port_Addr;
-    sc_out<RetCode> Port_Done;
-    sc_inout_rv<32> Port_Data;
-
-    SC_CTOR(Memory)
-    {
-        SC_THREAD(execute);
-        sensitive << Port_CLK.pos(); //sensitive to rising edge of clock
-        dont_initialize();
-
-        m_data = new int[MEM_SIZE];
-    }
-
-    ~Memory()
-    {
-        delete[] m_data;
-    }
-
-private:
-    int* m_data;
-
-    void execute()
-    {
-        while (true)
-        {
-            wait(Port_Func.value_changed_event());
-
-            Function f = Port_Func.read();
-            int addr   = Port_Addr.read();
-            int data   = 0;
-            if (f == FUNC_WRITE)
-            {
-                std::cout << sc_time_stamp() << ": MEM received write" << std::endl;
-                data = Port_Data.read().to_int();
-            }
-            else
-            {
-                std::cout << sc_time_stamp() << ": MEM received read" << std::endl;
-            }
-
-            // This simulates memory read/write delay
-            wait(99);
-
-            if (f == FUNC_READ)
-            {
-                Port_Data.write( (addr < MEM_SIZE) ? m_data[addr] : 0 );
-                Port_Done.write( RET_READ_DONE );
-                wait();
-                Port_Data.write("ZZZZZZZZ");
-            }
-            else
-            {
-                if (addr < MEM_SIZE)
-                {
-                    m_data[addr] = data;
-                }
-                Port_Done.write( RET_WRITE_DONE );
-            }
-        }
-    }
-};
 
 SC_MODULE(CPU)
 {
@@ -496,8 +501,8 @@ int sc_main(int argc, char* argv[])
 
         sc_buffer<Memory::Function> sigMemFunc;
         sc_buffer<Memory::RetCode>  sigMemDone;
-        sc_signal<int>              sigMemAddr;
-        sc_signal_rv<32>            sigMemData;
+        sc_signal<uint32_t>              sigMemAddr;
+        sc_signal_rv<8>            sigMemData;
 
         // The clock that will drive the CPU and Memory
         sc_clock clk;
@@ -512,6 +517,11 @@ int sc_main(int argc, char* argv[])
         mem.Port_Addr(sigMemAddr);
         mem.Port_Data(sigMemData);
         mem.Port_Done(sigMemDone);
+
+        cache.port_mem_addr(sigMemAddr);
+        cache.port_mem_data(sigMemData);
+        cache.port_mem_done(sigMemDone);
+        cache.port_mem_func(sigMemFunc);
 
         cpu.Port_MemFunc(sigCacheFunc);
         cpu.Port_MemAddr(sigCacheAddr);

@@ -1,8 +1,8 @@
 /* Report stuff
 - data, bytes or 32bit words per line -- design choice, it's fine.
-- valid/invalid implicit because only at startup for this lab.
 - cache-mem signals
 - mention lru design
+- different n-way dm fa cache testing
 */
 
 #include <systemc>
@@ -19,12 +19,15 @@
 
 #define CACHE_LINE_SIZE 32
 #define CACHE_SIZE (1 << 15) //32KB
-#define SET_SIZE 32
+#define SET_SIZE 8
 #define TOTAL_SETS ((CACHE_SIZE / CACHE_LINE_SIZE) / SET_SIZE)
 #define TOTAL_CACHE_LINES (CACHE_SIZE / CACHE_LINE_SIZE)
 #define MEM_LATENCY_CYCLES 100
 #define CACHE_LATENCY_CYCLES 1
 #define CPUID 0
+#define BYTE_OFF_8_WAY_BITS 5
+#define SET_ADDR_8_WAY_BITS 7
+#define TAG_8_WAY_BITS 20
 
 //for testing
 
@@ -39,6 +42,8 @@
 #define BYTE_OFF_FA_BITS 5
 #define SET_ADDR_FA_BITS 0
 #define TAG_FA_BITS 27
+
+//end of testing stuff
 
 #define UPDATE_TAG(s, l, a)   \
     s.at(l).tag = a.tag        
@@ -55,9 +60,9 @@ static const int MEM_SIZE = 512;
 
 typedef union __addr{ //to avoid bitmasking and uses only the 4 bytes of the address, no extra vars needed
     struct {
-        uint32_t byte_offset:BYTE_OFF_N_WAY_BITS;
-        uint32_t set_addr:SET_ADDR_N_WAY_BITS;
-        uint32_t tag:TAG_N_WAY_BITS;
+        uint32_t byte_offset:BYTE_OFF_8_WAY_BITS;
+        uint32_t set_addr:SET_ADDR_8_WAY_BITS;
+        uint32_t tag:TAG_8_WAY_BITS;
     }__attribute((packed, aligned(4))); //make sure it's no bigger than 4B and aligns to 4B boundary
     uint32_t memory_addr;
 } cache_addr_t;
@@ -66,7 +71,7 @@ typedef struct __line {
     std::array<uint8_t, CACHE_LINE_SIZE> line;
     struct{
         uint32_t valid:1;
-        uint32_t tag:31; //need only 20bits, extra 12 will be useful in the next labs for state.
+        uint32_t tag:31; //need only 20bits, extra 11 will be useful in the next labs for state.
         uint32_t lru_age; // lru counter. Assuming no cache line will stay for >2^32 accesses as unused.
     };
     inline bool operator<(const struct __line& line) const {

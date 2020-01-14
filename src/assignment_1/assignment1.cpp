@@ -13,6 +13,7 @@
 
 #include "psa.h"
 
+#define MEM_SIZE 512
 #define SET_SIZE 8
 #define CACHE_LINE_SIZE 32
 #define CACHE_SIZE (1 << 15) //32KB
@@ -34,7 +35,7 @@
 
 using namespace sc_core; // This pollutes namespace, better: only import what you need.
 
-static const int MEM_SIZE = 512;
+
 
 typedef union __addr{ //to avoid bitmasking and uses only the 4 bytes of the address, no extra vars needed
     struct {
@@ -425,11 +426,6 @@ private:
                 break;
             }
 
-            // To demonstrate the statistic functions, we generate a 50%
-            // probability of a 'hit' or 'miss', and call the statistic
-            // functions below
-            //int j = rand()%2;
-
             switch(tr_data.type)
             {
                 case TraceFile::ENTRY_TYPE_READ:
@@ -515,7 +511,7 @@ int sc_main(int argc, char* argv[])
         sc_signal<uint32_t>              sigMemAddr;
         sc_signal_rv<8>            sigMemData;
 
-        // The clock that will drive the CPU and Memory
+        // The clock that will drive the CPU, Memory and cache
         sc_clock clk;
 
         // Connecting module ports with signals

@@ -47,11 +47,6 @@ int sc_main(int argc, char* argv[])
         mem.Port_Data(sigMemData);
         mem.Port_Done(sigMemDone);
 
-        cache.port_mem_addr(sigMemAddr);
-        cache.port_mem_data(sigMemData);
-        cache.port_mem_done(sigMemDone);
-        cache.port_mem_func(sigMemFunc);
-
         cpu.Port_MemFunc(sigCacheFunc);
         cpu.Port_MemAddr(sigCacheAddr);
         cpu.Port_MemData(sigCacheData);

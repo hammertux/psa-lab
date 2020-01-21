@@ -13,8 +13,21 @@ class Bus : public Bus_if, public sc_module {
         SC_CTOR(Bus) {
             sensitive << port_clk.neg();
         }
+
+        int read(uint32_t) override;
+        int write(uint32_t, uint8_t) override;
 };
 
+
+int Bus::read(uint32_t addr)
+{
+
+}
+
+int Bus::write(uint32_t addr, uint8_t data)
+{
+
+}
 
 
 #endif /* __BUS_H__ */

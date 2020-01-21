@@ -11,7 +11,7 @@ using namespace sc_core;
 class Cache_if : public virtual sc_interface {
     public:
         virtual int read(const cache_addr_t&) = 0;
-        virtual int write(const cache_addr_t&, uint8_t&) = 0;
+        virtual int write(const cache_addr_t&, const uint8_t) = 0;
 
         virtual ~Cache_if() {};
 };

@@ -3,6 +3,8 @@
 #include "memory.h"
 #include "cache.h"
 #include "cpu.h"
+#include "bus.h"
+#include <vector>
 
 using namespace sc_core;
 
@@ -17,44 +19,28 @@ int sc_main(int argc, char* argv[])
         // Initialize statistics counters
         stats_init();
 
-        // Instantiate Modules
-        Memory mem("main_memory");
-        CPU    cpu("cpu");
-        Cache cache("L1_cache");
-
-        // Signals
-        sc_buffer<Cache::Function> sigCacheFunc;
-        sc_buffer<Cache::FuncRetCode>  sigCacheDone;
-        sc_signal<uint32_t>              sigCacheAddr;
-        sc_signal_rv<8>            sigCacheData;
-
-        sc_buffer<Memory::Function> sigMemFunc;
-        sc_buffer<Memory::RetCode>  sigMemDone;
-        sc_signal<uint32_t>              sigMemAddr;
-        sc_signal_rv<8>            sigMemData;
-
-        // The clock that will drive the CPU, Memory and cache
+        std::vector<std::shared_ptr<CPU>> cpus(num_cpus);
+        std::vector<std::shared_ptr<Cache>> caches(num_cpus);
+        std::shared_ptr<Memory> mem;
+        std::shared_ptr<Bus> bus;
         sc_clock clk;
+        sc_signal<addr_id_pair_t> bus_sig;
 
-        // Connecting module ports with signals
-        cache.port_func(sigCacheFunc);
-        cache.port_addr(sigCacheAddr);
-        cache.port_data(sigCacheData);
-        cache.port_done(sigCacheDone);
+        mem = std::make_shared<Memory>("main_memory");
+        bus = std::make_shared<Bus>("bus");
+        bus.get()->port_clk(clk);
+        bus.get()->port_bus_out(bus_sig);
+        
+        for(uint16_t i = 0; i < num_cpus; ++i) {
+            cpus.at(i) = std::make_shared<CPU>("cpu", i);
+            caches.at(i) = std::make_shared<Cache>("cache", i);
+            cpus.at(i).get()->cache(*(caches.at(i).get()));
+            cpus.at(i).get()->clock(clk);
+            caches.at(i).get()->memory(*(mem.get()));
+            caches.at(i).get()->port_bus_in(bus_sig);
 
-        mem.Port_Func(sigMemFunc);
-        mem.Port_Addr(sigMemAddr);
-        mem.Port_Data(sigMemData);
-        mem.Port_Done(sigMemDone);
-
-        cpu.Port_MemFunc(sigCacheFunc);
-        cpu.Port_MemAddr(sigCacheAddr);
-        cpu.Port_MemData(sigCacheData);
-        cpu.Port_MemDone(sigCacheDone);
-
-        mem.Port_CLK(clk);
-        cpu.Port_CLK(clk);
-        cache.port_clk(clk);
+        }
+        
 
         std::cout << "Running (press CTRL+C to interrupt)... " << std::endl;
 

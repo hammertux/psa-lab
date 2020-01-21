@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <array>
+#include <exception>
 
 #include "psa.h"
 
@@ -15,6 +16,10 @@
 #define CACHE_LATENCY_CYCLES 1
 #define CPUID 0
 #define LOG_ID 42
+
+#define RANDOM_DATA 0x42
+
+using namespace sc_core;
 
 typedef union __addr{ //to avoid bitmasking and uses only the 4 bytes of the address, no extra vars needed
     struct {
@@ -41,6 +46,8 @@ typedef struct __line {
 } cache_line_t;
 
 typedef std::array<cache_line_t, SET_SIZE> set_t;
+
+typedef std::pair<uint32_t, uint16_t> addr_id_pair_t;
 
 
 #endif /* __UTIL_H__ */

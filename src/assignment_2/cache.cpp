@@ -52,9 +52,7 @@ inline int8_t Cache::is_hit(const cache_addr_t& addr) const
     std::ostringstream log;
     for(int8_t i = 0; i < SET_SIZE; ++i) {
         log << "Comparing line tag: " << cache_p->at(addr.set_addr).at(i).tag << " -- Addr tag: " << addr.tag;
-        //SC_REPORT_INFO(LOG_ID, log.str().c_str());
         if((cache_p->at(addr.set_addr).at(i).tag == addr.tag) && cache_p->at(addr.set_addr).at(i).valid == 1){
-            //SC_REPORT_INFO(LOG_ID, "Cache Hit");
             hit = i;
             break;
         }
@@ -85,7 +83,6 @@ int Cache::write(const cache_addr_t& addr, const uint8_t data)
 
     if(line_index != -1) {
         //Write hit, write through via bus an Invalidation signal so other caches invalidate line
-        //SC_REPORT_INFO(LOG_ID, "Cache write hit");
         retv = 0;
         PUT_DATA((*set), line_index, addr, data);
         bus->write(this->cpuid, addr.memory_addr, RANDOM_DATA);
@@ -97,15 +94,12 @@ int Cache::write(const cache_addr_t& addr, const uint8_t data)
     }
     else {
         //Write miss, read from bus, evict lru line and replace it. invalidate other lines/write through to memory
-        //SC_REPORT_INFO(LOG_ID, "Cache write miss");
         retv = 1;
-        //std::cout << "before bus call in read func of cache" << std::endl;
         evict_entry(addr, set->at(lru_index));
-        bus->read(this->cpuid, addr.memory_addr); //read from bus
+        bus->read(this->cpuid, addr.memory_addr);
         wait(port_bus_in->value_changed_event());
         sig = port_bus_in->read();
         while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
-        //std::cout << "Got after bus read call in cache" << std::endl;
         PUT_DATA((*set), lru_index, addr, data);
         UPDATE_TAG((*set), lru_index, addr);
         bus->write(this->cpuid, addr.memory_addr, RANDOM_DATA);
@@ -140,7 +134,6 @@ int Cache::read(const cache_addr_t& addr)
 
     if((line_index = is_hit(addr)) != -1) {
         //Read Hit no bus operation required
-        //SC_REPORT_INFO(LOG_ID, "Cache read hit");
         retv = 0;
         data = GET_DATA((*set), line_index, addr);
         increment_age(*set, set->at(line_index));
@@ -148,7 +141,6 @@ int Cache::read(const cache_addr_t& addr)
     }
     else {
         //Read Miss, read from bus (main memory), evict lru, replace with line from bus
-        //SC_REPORT_INFO(LOG_ID, "Cache read miss");
         retv = 1;
         evict_entry(addr, set->at(lru_index));
         bus->read(this->cpuid, addr.memory_addr);
@@ -181,20 +173,17 @@ void Cache::snoop()
     bus_sig_t bus_sig;
 
     while(1) {
-        //std::cout << "start of while loop snoop" << std::endl;
         wait(port_bus_in->value_changed_event());
         bus_sig = port_bus_in->read();
         if(bus_sig.addr == 0) {
             continue;
         }
-        //std::cout << "start snoop after read bus in" << std::endl;
         addr.memory_addr = bus_sig.addr;
         set = &cache_p->at(addr.set_addr);
         if(bus_sig.req_status == REQ_CACHE_DONE) {
             for(auto& line : *set) {
                 if(line.tag == addr.tag && bus_sig.b == BUS_WRITE){
                     if(this->cpuid != bus_sig.id) {
-                        //std::cout << "Observed network write on other cpu" << std::endl;
                         INVALIDATE_LINE(line);
                     }
                     else {

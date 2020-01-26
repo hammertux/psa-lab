@@ -50,21 +50,18 @@ typedef std::array<cache_line_t, SET_SIZE> set_t;
 
 enum BUS_OP {
         BUS_WRITE,
-        BUS_READ,
-        BUS_INVALIDATE
+        BUS_READ
 };
 
 enum CACHE_REQ_STATUS {
     REQ_CACHE_QUEUED,
     REQ_CACHE_PROCESSING,
-    REQ_CACHE_DONE,
-    REQ_CACHE_FAIL
+    REQ_CACHE_DONE
 };
 
 enum MEM_REQ_STATUS {
     REQ_MEM_PROCESSING,
-    REQ_MEM_DONE,
-    REQ_MEM_FAIL
+    REQ_MEM_DONE
 };
 
 struct bus_sig_t{
@@ -73,6 +70,7 @@ struct bus_sig_t{
     uint32_t addr;
     uint16_t id;
     CACHE_REQ_STATUS req_status;
+    sc_time time_of_issue_to_bus;
 
     bus_sig_t() : addr(0){}
     bus_sig_t(BUS_OP _b, uint32_t _addr, uint16_t _id) : b(_b), addr(_addr), id(_id) {}

@@ -11,8 +11,10 @@ using namespace sc_core;
 
 class Bus : public Bus_if, public sc_module {
     private:
+        uint64_t total_requests_issued;
         std::vector<std::shared_ptr<bus_sig_t>> requests;
         std::shared_ptr<bus_sig_t> current_req;
+        
         void execute();
     public:
         sc_in<bool> port_clk;

@@ -9,13 +9,10 @@ void Bus::execute()
     MEM_REQ_STATUS mem_status;
     while(1) {
         wait();
-    
-        //std::cout << "BUS EXECUTE" << std::endl;
         if(!current_req) {
             for(const auto& req : requests) {
                 auto req_p = req.get();
                 if(req_p->req_status == REQ_CACHE_QUEUED) {
-                    //std::cout << "Adding req to queue " << *req_p << std::endl;
                     in_flight_reqs.push_back(*req_p);
                 }
             }
@@ -37,7 +34,6 @@ void Bus::execute()
             mem_status = current_p->b == BUS_READ ? memory->read(current_p->addr) : memory->write(current_p->addr, RANDOM_DATA);
             if(mem_status == REQ_MEM_DONE) {
                 current_p->req_status = REQ_CACHE_DONE;
-                //std::cout << "CURRENT REQUEST BUS: "<< *current_p << std::endl;
                 port_bus_inout->write(*current_p);
                 current_req = nullptr;
             }
@@ -52,9 +48,9 @@ void Bus::read(uint16_t id, uint32_t addr)
     std::shared_ptr<bus_sig_t> sig;
     sig = std::make_shared<bus_sig_t>(BUS_READ, addr, id);
     sig.get()->req_status = REQ_CACHE_QUEUED;
+    sig.get()->time_of_issue_to_bus = sc_time_stamp();
     for(const auto& req : requests) {
         if(*(sig.get()) == *(req.get())) {
-            //std::cout << "element already in req queue" << std::endl;
             sig.reset();
             return;
         }
@@ -67,9 +63,9 @@ void Bus::write(uint16_t id, uint32_t addr, uint8_t data)
     std::shared_ptr<bus_sig_t> sig;
     sig = std::make_shared<bus_sig_t>(BUS_WRITE, addr, id);
     sig.get()->req_status = REQ_CACHE_QUEUED;
+    sig.get()->time_of_issue_to_bus = sc_time_stamp();
     for(const auto& req : requests) {
         if(*(sig.get()) == *(req.get())) {
-            //std::cout << "element already in req queue" << std::endl;
             sig.reset();
             return;
         }

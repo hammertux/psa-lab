@@ -52,9 +52,9 @@ inline int8_t Cache::is_hit(const cache_addr_t& addr) const
     std::ostringstream log;
     for(int8_t i = 0; i < SET_SIZE; ++i) {
         log << "Comparing line tag: " << cache_p->at(addr.set_addr).at(i).tag << " -- Addr tag: " << addr.tag;
-        SC_REPORT_INFO(LOG_ID, log.str().c_str());
+        //SC_REPORT_INFO(LOG_ID, log.str().c_str());
         if((cache_p->at(addr.set_addr).at(i).tag == addr.tag) && cache_p->at(addr.set_addr).at(i).valid == 1){
-            SC_REPORT_INFO(LOG_ID, "Cache Hit");
+            //SC_REPORT_INFO(LOG_ID, "Cache Hit");
             hit = i;
             break;
         }
@@ -75,84 +75,100 @@ __always_inline void Cache::evict_entry(const cache_addr_t& addr, cache_line_t& 
 
 int Cache::write(const cache_addr_t& addr, const uint8_t data) 
 {
+    std::cout << "CACHE ID = " << this->cpuid << "Addr = " << addr.memory_addr << std::endl;
     auto cache_p = cache.get();
     set_t *set = &cache_p->at(addr.set_addr);
     int retv = 1;
     int8_t line_index = is_hit(addr);
     unsigned int lru_index = get_lru_index(*set);
+    bus_sig_t sig;
 
     if(line_index != -1) {
         //Write hit, write through via bus an Invalidation signal so other caches invalidate line
-        SC_REPORT_INFO(LOG_ID, "Cache write hit");
+        //SC_REPORT_INFO(LOG_ID, "Cache write hit");
         retv = 0;
         PUT_DATA((*set), line_index, addr, data);
+        bus->write(this->cpuid, addr.memory_addr, RANDOM_DATA);
+        wait(port_bus_in->value_changed_event());
+        sig = port_bus_in->read();
+        while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
         increment_age(*set, set->at(line_index));
         goto out_hit;
     }
     else {
-        //Write miss, read from bus, evict lru line and replace it.
-        SC_REPORT_INFO(LOG_ID, "Cache write miss");
+        //Write miss, read from bus, evict lru line and replace it. invalidate other lines/write through to memory
+        //SC_REPORT_INFO(LOG_ID, "Cache write miss");
         retv = 1;
-        memory->write(addr, RANDOM_DATA);
+        //std::cout << "before bus call in read func of cache" << std::endl;
         evict_entry(addr, set->at(lru_index));
+        bus->read(this->cpuid, addr.memory_addr); //read from bus
+        wait(port_bus_in->value_changed_event());
+        sig = port_bus_in->read();
+        while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
+        //std::cout << "Got after bus read call in cache" << std::endl;
         PUT_DATA((*set), lru_index, addr, data);
         UPDATE_TAG((*set), lru_index, addr);
+        bus->write(this->cpuid, addr.memory_addr, RANDOM_DATA);
+        wait(port_bus_in->value_changed_event());
+        sig = port_bus_in->read();
+        while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
         set->at(lru_index).valid = 1;
         increment_age(*set, set->at(lru_index));
         goto out_miss;
     }
 
 out_hit:
-    stats_writehit(CPUID);
+    stats_writehit(cpuid);
     sc_core::wait(CACHE_LATENCY_CYCLES);
     return retv;
 out_miss:
-    stats_writemiss(CPUID);
-    sc_core::wait(MEM_LATENCY_CYCLES);
+    stats_writemiss(cpuid);
     return retv;
 }
 
 
 int Cache::read(const cache_addr_t& addr) 
 {
+    std::cout << "CACHE ID = " << this->cpuid << "Addr = " << addr.memory_addr << std::endl;
     auto cache_p = cache.get();
     set_t *set = &cache_p->at(addr.set_addr);
     int retv = 1;
     int8_t line_index = 0;
     unsigned int lru_index = get_lru_index(*set);
     uint8_t data;
+    bus_sig_t sig;
 
     if((line_index = is_hit(addr)) != -1) {
         //Read Hit no bus operation required
-        SC_REPORT_INFO(LOG_ID, "Cache read hit");
+        //SC_REPORT_INFO(LOG_ID, "Cache read hit");
         retv = 0;
         data = GET_DATA((*set), line_index, addr);
-        //port_data.write(data);
         increment_age(*set, set->at(line_index));
         goto out_hit;
     }
     else {
         //Read Miss, read from bus (main memory), evict lru, replace with line from bus
-        SC_REPORT_INFO(LOG_ID, "Cache read miss");
+        //SC_REPORT_INFO(LOG_ID, "Cache read miss");
         retv = 1;
         evict_entry(addr, set->at(lru_index));
-        memory->read(addr);
+        bus->read(this->cpuid, addr.memory_addr);
+        wait(port_bus_in->value_changed_event());
+        sig = port_bus_in->read();
+        while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
         data = GET_DATA((*set), lru_index, addr);
         UPDATE_TAG((*set), lru_index, addr);
         set->at(lru_index).valid = 1;
-        //port_data.write(data);
         increment_age(*set, set->at(lru_index));
         goto out_miss;
     }
 
 
 out_hit:
-    stats_readhit(CPUID);
+    stats_readhit(cpuid);
     sc_core::wait(CACHE_LATENCY_CYCLES);
     return retv;
 out_miss:
-    stats_readmiss(CPUID);
-    sc_core::wait(MEM_LATENCY_CYCLES);
+    stats_readmiss(cpuid);
     return retv;
 
 }
@@ -162,54 +178,32 @@ void Cache::snoop()
     auto cache_p = cache.get();
     cache_addr_t addr;
     set_t *set = nullptr;
-    addr_id_pair_t bus_pair;
+    bus_sig_t bus_sig;
 
     while(1) {
+        //std::cout << "start of while loop snoop" << std::endl;
         wait(port_bus_in->value_changed_event());
-        bus_pair = port_bus_in->read();
-        addr.memory_addr = bus_pair.first;
+        bus_sig = port_bus_in->read();
+        if(bus_sig.addr == 0) {
+            continue;
+        }
+        //std::cout << "start snoop after read bus in" << std::endl;
+        addr.memory_addr = bus_sig.addr;
         set = &cache_p->at(addr.set_addr);
-
-        for(auto& line : *set) {
-            if(line.tag == addr.tag && this->cpuid != bus_pair.second) {
-                INVALIDATE_LINE(line);
+        if(bus_sig.req_status == REQ_CACHE_DONE) {
+            for(auto& line : *set) {
+                if(line.tag == addr.tag && bus_sig.b == BUS_WRITE){
+                    if(this->cpuid != bus_sig.id) {
+                        //std::cout << "Observed network write on other cpu" << std::endl;
+                        INVALIDATE_LINE(line);
+                    }
+                    else {
+                        line.valid = 1;
+                        line.line.at(addr.byte_offset) = RANDOM_DATA;
+                    }
+                }
             }
         }
     }
 
 }
-
-// void Cache::execute()
-// {   
-//     cache_addr_t addr;
-//     Function func;
-//     uint8_t data;
-//     std::ostringstream log;
-    
-//     while(1) {
-//         //wait(port_func.value_changed_event());
-//         SC_REPORT_INFO(LOG_ID, "\nReceived Function Signal!\n");
-//         //func = port_func.read();
-//         //addr.memory_addr = port_addr.read();
-//         data = 0;
-//         log << "Tag: " << addr.tag << " -- Set: " << addr.set_addr << " -- Offset: " << addr.byte_offset;
-//         SC_REPORT_INFO(LOG_ID, log.str().c_str());
-//         if(func == FUNC_WRITE) {
-//             SC_REPORT_INFO(LOG_ID, "Executing Cache Write");
-//             //data = static_cast<uint8_t>(port_data.read().to_int());
-//             this->write(addr, data);
-//             //port_done.write(RET_WRITE);
-//         }
-//         else if(func == FUNC_READ) {
-//             SC_REPORT_INFO(LOG_ID, "Executing Cache Read");
-//             this->read(addr);
-//             //port_done.write(RET_READ);
-//         }
-//         else {
-//             throw std::runtime_error("Unknown Function");
-//         }
-//         log.str("");
-//         log.clear();
-//     }
-
-// }

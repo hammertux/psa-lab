@@ -9,6 +9,7 @@
 #include "cache_if.h"
 #include "util.h"
 #include "bus_slave_if.h"
+#include "bus_if.h"
 
 
 using namespace sc_core;
@@ -35,7 +36,6 @@ class Cache : public Cache_if, public sc_module {
         std::unique_ptr<std::array<set_t, TOTAL_SETS>> cache;
         
 
-        //void execute();
         void snoop();
         unsigned int get_lru_index(const set_t&) const;
         
@@ -45,17 +45,17 @@ class Cache : public Cache_if, public sc_module {
 
     public:
 
-        sc_port<Bus_slave_if> memory;
-        sc_port<sc_signal_in_if<addr_id_pair_t>> port_bus_in;
+        sc_port<Bus_if> bus;
+        sc_in_clk port_clk;
+        sc_port<sc_signal_in_if<bus_sig_t>> port_bus_in;
 
         Cache(sc_module_name __name, uint16_t __cpuid) : sc_module(__name),
                                                          cpuid(__cpuid),
                                                          cache(new std::array<set_t, TOTAL_SETS>)
                                                          
         {
-            
-            //SC_THREAD(execute);
-            //SC_THREAD(snoop);
+            SC_THREAD(snoop);
+            sensitive << port_clk.pos();
             
             if(!cache) {
                 throw std::runtime_error("Couldn't initialise cache.");
@@ -69,7 +69,8 @@ class Cache : public Cache_if, public sc_module {
                 }
             }
             
-            dont_initialize();
+            
+            
             sc_report::register_id(LOG_ID, "[SC_LOG] ");
             sc_report_handler::set_actions (SC_ID_VECTOR_CONTAINS_LOGIC_VALUE_,
                                 SC_DO_NOTHING);
@@ -77,7 +78,7 @@ class Cache : public Cache_if, public sc_module {
                                 SC_DO_NOTHING );
             
         }
-        //SC_HAS_PROCESS(Cache);
+        SC_HAS_PROCESS(Cache);
 
         ~Cache(){}
 

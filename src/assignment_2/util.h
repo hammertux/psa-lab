@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include <array>
 #include <exception>
-
+#include <iostream>
+#include <memory>
 #include "psa.h"
 
 #define SET_SIZE 8
@@ -47,7 +48,58 @@ typedef struct __line {
 
 typedef std::array<cache_line_t, SET_SIZE> set_t;
 
-typedef std::pair<uint32_t, uint16_t> addr_id_pair_t;
+enum BUS_OP {
+        BUS_WRITE,
+        BUS_READ,
+        BUS_INVALIDATE
+};
 
+enum CACHE_REQ_STATUS {
+    REQ_CACHE_QUEUED,
+    REQ_CACHE_PROCESSING,
+    REQ_CACHE_DONE,
+    REQ_CACHE_FAIL
+};
+
+enum MEM_REQ_STATUS {
+    REQ_MEM_PROCESSING,
+    REQ_MEM_DONE,
+    REQ_MEM_FAIL
+};
+
+struct bus_sig_t{
+    
+    BUS_OP b;
+    uint32_t addr;
+    uint16_t id;
+    CACHE_REQ_STATUS req_status;
+
+    bus_sig_t() : addr(0){}
+    bus_sig_t(BUS_OP _b, uint32_t _addr, uint16_t _id) : b(_b), addr(_addr), id(_id) {}
+    
+    inline bool operator ==(const bus_sig_t& sig) {
+        return (this->addr == sig.addr) && (this->b == sig.b) && (this->id == sig.id);
+    }
+
+    inline bus_sig_t operator =(const bus_sig_t& sig) {
+        this->b = sig.b;
+        this->addr = sig.addr;
+        this->id = sig.id;
+        this->req_status = sig.req_status;
+        return *this;
+    }
+
+    friend void sc_trace(sc_trace_file *tf, const bus_sig_t& sig, const std::string& name) {
+        sc_trace(tf, sig.b, name + ".BUS_OP");
+        sc_trace(tf, sig.addr, name + ".addr");
+        sc_trace(tf, sig.id, name + ".id");
+    }
+
+    inline friend std::ostream& operator <<(std::ostream& os,  bus_sig_t const & sig) {
+      os << "(" << sig.b << ", " << std::boolalpha << sig.addr << ", " << sig.id << ", " << sig.req_status << ")";
+      return os;
+    }
+
+};
 
 #endif /* __UTIL_H__ */

@@ -7,8 +7,8 @@
 
 class Bus_if : public virtual sc_interface {
     public:
-        virtual int read(uint32_t) = 0;
-        virtual int write(uint32_t, uint8_t data) = 0;
+        virtual void read(uint16_t, uint32_t) = 0;
+        virtual void write(uint16_t, uint32_t, uint8_t) = 0;
 
         virtual ~Bus_if() {}
 };

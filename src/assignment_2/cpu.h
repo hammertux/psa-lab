@@ -11,7 +11,7 @@ class CPU : public sc_module {
 
     public:
         sc_in_clk clock;
-        sc_port<Cache_if> cache;
+        sc_port<Cache_if, SC_MANY_WRITERS> cache;
 
         CPU(sc_module_name __name, uint16_t __cpuid) : sc_module(__name), 
                                                        cpuid(__cpuid) {

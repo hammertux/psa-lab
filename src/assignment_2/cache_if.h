@@ -7,7 +7,6 @@
 using namespace sc_core;
 
 
-
 class Cache_if : public virtual sc_interface {
     public:
         virtual int read(const cache_addr_t&) = 0;

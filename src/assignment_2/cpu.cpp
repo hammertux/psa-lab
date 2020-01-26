@@ -12,7 +12,7 @@ void CPU::execute()
         while(!tracefile_ptr->eof())
         {
             // Get the next action for the processor in the trace
-            if(!tracefile_ptr->next(0, tr_data))
+            if(!tracefile_ptr->next(cpuid, tr_data))
             {
                 std::runtime_error("Error reading trace for CPU");
             }
@@ -22,14 +22,15 @@ void CPU::execute()
             switch(tr_data.type)
             {
                 case TraceFile::ENTRY_TYPE_READ:
-                    cache->read(addr);
+                    this->cache->read(addr);
                     break;
 
                 case TraceFile::ENTRY_TYPE_WRITE:
-                    cache->write(addr, RANDOM_DATA);
+                    this->cache->write(addr, RANDOM_DATA);
                     break;
 
                 case TraceFile::ENTRY_TYPE_NOP:
+                    //std::cout << "NOP Read for CPU NUMBER " << cpuid << std::endl;
                     break;
 
                 default:

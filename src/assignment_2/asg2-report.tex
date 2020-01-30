@@ -190,11 +190,15 @@ Total Simulation Time = 1291690 ns\\
 
 \section{Experiments}
 
-In order to show how the hitrates change by disabling snooping in the caches, I have decided to run the tests only for the 8 processor FFT tracefile as it has the more realistic access patterns.
+In order to show how the hitrates change by disabling snooping in the caches, I have decided to run the tests only for the 8 processor FFT tracefile as it has the more realistic access patterns.\\
+My hypothesis is that disabling snooping will result in a higher hitrate, albeit being a ``fake" hitrate due to the fact that the caches will lose coherency.
 
 \begin{figure}[H]
 	\includegraphics[scale=0.35,left]{./snoop.png}
 \end{figure}
+
+
+The figure above shows that disabling snooping, unexpectedly, does not increase the hitrates by much, but only marginally. One explanation for this could be that the tracefile generates access patterns which are processor independent. I.e., lines that are used by one processor are not used much in other processors, meaning that the writes don't necessarily affect the validity of the cahce lines in other CPUs.
 
 
 \end{document}

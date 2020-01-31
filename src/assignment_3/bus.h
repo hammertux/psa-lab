@@ -24,6 +24,7 @@ class Bus : public Bus_if, public sc_module {
         sc_port<Bus_slave_if> memory;
         sc_port<sc_signal_inout_if<bus_sig_t>> port_bus_inout;
         sc_port<sc_signal_inout_if<bus_sig_t>> port_c2c_inout;
+        sc_port<sc_signal_inout_if<bus_sig_t>> port_advertise_inout;
 
         SC_CTOR(Bus) : current_req(nullptr){
             

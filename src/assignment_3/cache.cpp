@@ -78,7 +78,7 @@ int Cache::write(const cache_addr_t& addr, const uint8_t data)
     int retv = 1;
     int8_t line_index = is_hit(addr);
     unsigned int lru_index = get_lru_index(*set);
-    bus_sig_t sig;
+    bus_sig_t sig = bus_sig_t();
 
     if(line_index != -1) {
         //Write hit, write through via bus an Invalidation signal so other caches invalidate line
@@ -133,7 +133,7 @@ int Cache::read(const cache_addr_t& addr)
     int8_t line_index = 0;
     unsigned int lru_index = get_lru_index(*set);
     uint8_t data;
-    bus_sig_t sig;
+    bus_sig_t sig = bus_sig_t();
 
     if((line_index = is_hit(addr)) != -1) {
         //Read Hit no bus operation required
@@ -181,14 +181,14 @@ void Cache::snoop()
     auto cache_p = cache.get();
     cache_addr_t addr;
     set_t *set = nullptr;
-    bus_sig_t bus_sig;
+    bus_sig_t bus_sig = bus_sig_t();
 
     while(1) {
         wait(port_bus_in->value_changed_event() | port_c2c_in->value_changed_event());
         bus_sig = port_bus_in->read();
         addr.memory_addr = bus_sig.addr;
         set = &cache_p->at(addr.set_addr);
-        if(bus_sig.req_status == REQ_CACHE_DONE) {
+        if(bus_sig.req_status == REQ_CACHE_DONE || bus_sig.req_status == REQ_CACHE_PROCESSING) {
             for(auto& line : *set) {
                 if(line.tag == addr.tag && bus_sig.b == BUS_WRITE){
                     if(this->cpuid != bus_sig.id) {
@@ -222,11 +222,11 @@ void Cache::snoop()
                 }
             }
         }
-        else {
+        //else {
             bus_sig = port_c2c_in->read();
             addr.memory_addr = bus_sig.addr;
             set = &cache_p->at(addr.set_addr);
-            std::cout << "snooped this sig: " << bus_sig << std::endl;
+            //std::cout << "snooped this sig: " << bus_sig << std::endl;
         
             for(auto& line : *set) {
                 if(line.tag == addr.tag && (line.owned || line.modified || line.shared)){
@@ -239,7 +239,7 @@ void Cache::snoop()
             //check if I have a copy of the requested data, if i do, serve it via the bus.
             //should I serve only if i am the owner? If not how can I handle mutliple writers to signal?
             //latency cycles for cache-to-cache transfers?
-        }
+        //}
     }
 
 }

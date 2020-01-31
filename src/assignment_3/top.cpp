@@ -28,6 +28,7 @@ int sc_main(int argc, char* argv[])
         sc_clock clk;
         sc_signal<bus_sig_t> bus_sig;
         sc_signal<bus_sig_t> c2c_bus_sig;
+        sc_signal<bus_sig_t> advertise_sig;
 
         mem = std::make_shared<Memory>("main_memory");
         bus = std::make_shared<Bus>("bus");
@@ -38,6 +39,7 @@ int sc_main(int argc, char* argv[])
         bus.get()->port_clk(clk);
         bus.get()->port_bus_inout(bus_sig);
         bus.get()->port_c2c_inout(c2c_bus_sig);
+        bus.get()->port_advertise_inout(advertise_sig);
         bus.get()->arbiter(*(arbiter).get());
         bus.get()->memory(*(mem).get());
         
@@ -50,6 +52,7 @@ int sc_main(int argc, char* argv[])
             caches.at(i).get()->bus(*(bus.get()));
             caches.at(i).get()->port_bus_in(bus_sig);
             caches.at(i).get()->port_c2c_in(c2c_bus_sig);
+            caches.at(i).get()->port_advertise_in(advertise_sig);
             caches.at(i).get()->port_clk(clk);
             //std::cout << "I VAL = " << i << std::endl;
         }

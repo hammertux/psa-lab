@@ -59,6 +59,7 @@ class Cache : public Cache_if, public sc_module {
         sc_in_clk port_clk;
         sc_port<sc_signal_in_if<bus_sig_t>> port_bus_in;
         sc_port<sc_signal_in_if<bus_sig_t>> port_c2c_in;
+        sc_port<sc_signal_in_if<bus_sig_t>> port_advertise_in;
 
         Cache(sc_module_name __name, uint16_t __cpuid) : sc_module(__name),
                                                          cpuid(__cpuid),

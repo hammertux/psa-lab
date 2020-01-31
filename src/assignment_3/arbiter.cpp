@@ -13,6 +13,7 @@ std::shared_ptr<bus_sig_t> Arbiter::arbitrate(std::vector<bus_sig_t>& reqs)
     }
     for(it = reqs.begin(); it != reqs.end(); ++it) {
         if(it->is_c2c) {
+            req = std::make_shared<bus_sig_t>(*it);
             return req; //prioritise cache to cache transactions
         }
         if((it->req_status == REQ_CACHE_PROCESSING || it->req_status == REQ_CACHE_QUEUED) && it->b == BUS_WRITE) {

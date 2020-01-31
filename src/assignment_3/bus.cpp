@@ -11,7 +11,10 @@ void Bus::execute()
     while(1) {
         wait();
         if(requests.size() > last_queue_size || !(old_tail == *(requests.back().get()))) {
-            std::cout << "Queue enlarged" << std::endl;
+            // std::cout << "Queue enlarged" << std::endl;
+            // for(const auto& i : requests) {
+            //     std::cout << *(i.get()) << std::endl;
+            // }
             port_c2c_inout->write(*(requests.back().get())); //check if other caches have it
         }
         last_queue_size = requests.size();
@@ -28,6 +31,8 @@ void Bus::execute()
 
         current_p = current_req.get();
         if(current_req) {
+            //current_p->req_status = REQ_CACHE_PROCESSING;
+            //port_bus_inout->write(*current_p); //let caches know if thy should change state
             for(auto it = requests.begin(); it != requests.end();) {
                 if(*(it->get()) == *current_p) {
                     it->reset();
@@ -37,9 +42,9 @@ void Bus::execute()
                     ++it;
                 }
             }
-            current_p->req_status = REQ_CACHE_PROCESSING;
             if(current_p->is_c2c) {
                 current_p->req_status = REQ_CACHE_DONE;
+                std::cout << "IS C2C " << *current_p << std::endl;
                 port_bus_inout->write(*current_p);
                 current_req.reset();
             }
@@ -92,6 +97,8 @@ void Bus::cache_to_cache(uint16_t id, uint32_t addr)
 {
     bus_sig_t sig_rd = bus_sig_t(BUS_READ, addr, id);
     bus_sig_t sig_wr = bus_sig_t(BUS_WRITE, addr, id);
+    sig_rd.req_status = REQ_CACHE_QUEUED;
+    sig_wr.req_status = REQ_CACHE_QUEUED;
     std::cout << "C2C called " << std::endl;
 
     for(auto it = requests.begin(); it != requests.end(); ++it) {

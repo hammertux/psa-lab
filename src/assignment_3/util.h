@@ -54,13 +54,15 @@ typedef std::array<cache_line_t, SET_SIZE> set_t;
 
 enum BUS_OP {
         BUS_WRITE,
-        BUS_READ
+        BUS_READ,
+        DUMMY_B
 };
 
 enum CACHE_REQ_STATUS {
     REQ_CACHE_QUEUED,
     REQ_CACHE_PROCESSING,
-    REQ_CACHE_DONE
+    REQ_CACHE_DONE,
+    DUMMY
 };
 
 enum MEM_REQ_STATUS {
@@ -77,7 +79,13 @@ struct bus_sig_t{
     sc_time time_of_issue_to_bus;
     bool is_c2c;
 
-    bus_sig_t() : addr(0){}
+    bus_sig_t() {
+        addr = 0;
+        id = 0;
+        is_c2c = false;
+        req_status = DUMMY;
+        b = DUMMY_B;
+    }
     bus_sig_t(BUS_OP _b, uint32_t _addr, uint16_t _id) : b(_b), addr(_addr), id(_id) {is_c2c = false;}
     
     inline bool operator ==(const bus_sig_t& sig) {
@@ -100,7 +108,7 @@ struct bus_sig_t{
     }
 
     inline friend std::ostream& operator <<(std::ostream& os,  bus_sig_t const & sig) {
-      os << "(" << sig.b << ", " << std::boolalpha << sig.addr << ", " << sig.id << ", " << sig.req_status << ")";
+      os << "(" << sig.b << ", " << std::boolalpha << sig.addr << ", " << sig.id << ", " << sig.req_status << ", " << sig.is_c2c << ")";
       return os;
     }
 

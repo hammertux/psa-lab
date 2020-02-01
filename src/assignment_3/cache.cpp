@@ -67,6 +67,7 @@ __always_inline void Cache::evict_entry(const cache_addr_t& addr, cache_line_t& 
 {
     if(evict_line.modified || evict_line.owned) {
         bus->write(this->cpuid, addr.memory_addr, RANDOM_DATA);//WB to memory
+        wait(port_bus_in->value_changed_event());
     }
 }
 
@@ -91,6 +92,7 @@ int Cache::write(const cache_addr_t& addr, const uint8_t data)
         while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
         increment_age(*set, set->at(line_index));
         if(set->at(line_index).exclusive || set->at(line_index).shared || set->at(line_index).owned) {
+            std::cout << "Write, modified bit set" << std::endl;
             CLEAR_MOESI_BITS(set->at(line_index));
             set->at(line_index).valid = 1;
             set->at(line_index).modified = 1;
@@ -107,6 +109,8 @@ int Cache::write(const cache_addr_t& addr, const uint8_t data)
         while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
         PUT_DATA((*set), lru_index, addr, data);
         UPDATE_TAG((*set), lru_index, addr);
+        std::cout << "Write miss, setting modified bit" << std::endl;
+        CLEAR_MOESI_BITS(set->at(lru_index));
         set->at(lru_index).valid = 1;
         set->at(lru_index).modified = 1;
         increment_age(*set, set->at(lru_index));
@@ -206,8 +210,8 @@ void Cache::snoop()
                 else if(line.tag == addr.tag && bus_sig.b == BUS_READ) {
                     
                     if(this->cpuid != bus_sig.id) {
-                        std::cout << "snoop read happened " << std::endl;
                         if(line.exclusive) {
+                            std::cout << "Modified bit set" << std::endl;
                             CLEAR_MOESI_BITS(line);
                             line.valid = 1;
                             line.shared = 1;
@@ -225,6 +229,9 @@ void Cache::snoop()
         //else {
             bus_sig = port_c2c_in->read();
             addr.memory_addr = bus_sig.addr;
+            if(bus_sig.b == DUMMY_B) {
+                continue;
+            }
             set = &cache_p->at(addr.set_addr);
             //std::cout << "snooped this sig: " << bus_sig << std::endl;
         

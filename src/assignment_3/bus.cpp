@@ -11,10 +11,7 @@ void Bus::execute()
     while(1) {
         wait();
         if(requests.size() > last_queue_size || !(old_tail == *(requests.back().get()))) {
-            // std::cout << "Queue enlarged" << std::endl;
-            // for(const auto& i : requests) {
-            //     std::cout << *(i.get()) << std::endl;
-            // }
+            //if a new request has been added to the queue
             port_c2c_inout->write(*(requests.back().get())); //check if other caches have it
         }
         last_queue_size = requests.size();
@@ -31,8 +28,6 @@ void Bus::execute()
 
         current_p = current_req.get();
         if(current_req) {
-            //current_p->req_status = REQ_CACHE_PROCESSING;
-            //port_bus_inout->write(*current_p); //let caches know if thy should change state
             for(auto it = requests.begin(); it != requests.end();) {
                 if(*(it->get()) == *current_p) {
                     it->reset();
@@ -44,7 +39,7 @@ void Bus::execute()
             }
             if(current_p->is_c2c) {
                 current_p->req_status = REQ_CACHE_DONE;
-                std::cout << "IS C2C " << *current_p << std::endl;
+                wait(CACHE_LATENCY_CYCLES); // cache-to-cache transfer assumed to be 1 clock cycle.
                 port_bus_inout->write(*current_p);
                 current_req.reset();
             }
@@ -69,7 +64,7 @@ void Bus::read(uint16_t id, uint32_t addr)
     sig.get()->req_status = REQ_CACHE_QUEUED;
     sig.get()->time_of_issue_to_bus = sc_time_stamp();
     for(const auto& req : requests) {
-        if(*(sig.get()) == *(req.get())) {
+        if(*(sig.get()) == *(req.get())) {//if duplicate request don't add to queue
             sig.reset();
             return;
         }
@@ -84,8 +79,7 @@ void Bus::write(uint16_t id, uint32_t addr, uint8_t data)
     sig.get()->req_status = REQ_CACHE_QUEUED;
     sig.get()->time_of_issue_to_bus = sc_time_stamp();
     for(const auto& req : requests) {
-        if(*(sig.get()) == *(req.get())) {
-            std::cout << "Exists already" << std::endl;
+        if(*(sig.get()) == *(req.get())) {//if duplicate request don't add to queue
             sig.reset();
             return;
         }
@@ -99,7 +93,6 @@ void Bus::cache_to_cache(uint16_t id, uint32_t addr)
     bus_sig_t sig_wr = bus_sig_t(BUS_WRITE, addr, id);
     sig_rd.req_status = REQ_CACHE_QUEUED;
     sig_wr.req_status = REQ_CACHE_QUEUED;
-    std::cout << "C2C called " << std::endl;
 
     for(auto it = requests.begin(); it != requests.end(); ++it) {
         if(*(it->get()) == sig_rd) {

@@ -49,15 +49,11 @@ inline int8_t Cache::is_hit(const cache_addr_t& addr) const
 {
     auto cache_p = cache.get();
     int8_t hit = -1; //if no hit, return -1 to evict lru cache line
-    std::ostringstream log;
     for(int8_t i = 0; i < SET_SIZE; ++i) {
-        log << "Comparing line tag: " << cache_p->at(addr.set_addr).at(i).tag << " -- Addr tag: " << addr.tag;
         if((cache_p->at(addr.set_addr).at(i).tag == addr.tag) && cache_p->at(addr.set_addr).at(i).valid == 1){
             hit = i;
             break;
         }
-        log.str("");
-        log.clear();
     }
 
     return hit;
@@ -92,7 +88,6 @@ int Cache::write(const cache_addr_t& addr, const uint8_t data)
         while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
         increment_age(*set, set->at(line_index));
         if(set->at(line_index).exclusive || set->at(line_index).shared || set->at(line_index).owned) {
-            std::cout << "Write, modified bit set" << std::endl;
             CLEAR_MOESI_BITS(set->at(line_index));
             set->at(line_index).valid = 1;
             set->at(line_index).modified = 1;
@@ -109,7 +104,6 @@ int Cache::write(const cache_addr_t& addr, const uint8_t data)
         while(sig.req_status != REQ_CACHE_DONE && sig.id == this->cpuid) {wait();}
         PUT_DATA((*set), lru_index, addr, data);
         UPDATE_TAG((*set), lru_index, addr);
-        std::cout << "Write miss, setting modified bit" << std::endl;
         CLEAR_MOESI_BITS(set->at(lru_index));
         set->at(lru_index).valid = 1;
         set->at(lru_index).modified = 1;
@@ -123,7 +117,6 @@ out_hit:
     return retv;
 out_miss:
     stats_writemiss(cpuid);
-    //std:: cout << "Write miss" << std::endl;
     return retv;
 }
 
@@ -172,12 +165,10 @@ int Cache::read(const cache_addr_t& addr)
 out_hit:
     stats_readhit(cpuid);
     sc_core::wait(CACHE_LATENCY_CYCLES);
-    //std::cout << "read hit" << std::endl;
     return retv;
 out_miss:
     stats_readmiss(cpuid);
     return retv;
-
 }
 
 void Cache::snoop()
@@ -187,7 +178,7 @@ void Cache::snoop()
     set_t *set = nullptr;
     bus_sig_t bus_sig = bus_sig_t();
 
-    while(1) {
+    while(0) {
         wait(port_bus_in->value_changed_event() | port_c2c_in->value_changed_event());
         bus_sig = port_bus_in->read();
         addr.memory_addr = bus_sig.addr;
@@ -200,24 +191,20 @@ void Cache::snoop()
                             INVALIDATE_LINE(line);
                         }
                     }
-                    else {
-                        if(line.valid == 0)
+                    else if(line.valid == 0) {
                         line.valid = 1;
                         line.modified = 1;
                         line.line.at(addr.byte_offset) = RANDOM_DATA;
                     }
                 }
                 else if(line.tag == addr.tag && bus_sig.b == BUS_READ) {
-                    
                     if(this->cpuid != bus_sig.id) {
                         if(line.exclusive) {
-                            std::cout << "Modified bit set" << std::endl;
                             CLEAR_MOESI_BITS(line);
                             line.valid = 1;
                             line.shared = 1;
                         }
                         else if(line.modified) {
-                            std::cout << "M -> O" << std::endl;
                             CLEAR_MOESI_BITS(line);
                             line.valid = 1;
                             line.owned = 1;
@@ -226,27 +213,20 @@ void Cache::snoop()
                 }
             }
         }
-        //else {
-            bus_sig = port_c2c_in->read();
-            addr.memory_addr = bus_sig.addr;
-            if(bus_sig.b == DUMMY_B) {
-                continue;
-            }
-            set = &cache_p->at(addr.set_addr);
-            //std::cout << "snooped this sig: " << bus_sig << std::endl;
-        
-            for(auto& line : *set) {
-                if(line.tag == addr.tag && (line.owned || line.modified || line.shared)){
-                    if(this->cpuid != bus_sig.id) {
-                        std::cout << "I can satisfy that :)" << std::endl;
-                        bus->cache_to_cache(bus_sig.id, bus_sig.addr);
-                    }
+        bus_sig = port_c2c_in->read();
+        addr.memory_addr = bus_sig.addr;
+        if(bus_sig.b == DUMMY_B) {
+            continue;
+        }
+        set = &cache_p->at(addr.set_addr);
+    
+        for(auto& line : *set) {
+            if(line.tag == addr.tag && (line.owned || line.modified)){
+                if(this->cpuid != bus_sig.id) {
+                    std::cout << "I can satisfy that :)" << std::endl;
+                    bus->cache_to_cache(bus_sig.id, bus_sig.addr);
                 }
             }
-            //check if I have a copy of the requested data, if i do, serve it via the bus.
-            //should I serve only if i am the owner? If not how can I handle mutliple writers to signal?
-            //latency cycles for cache-to-cache transfers?
-        //}
+        }
     }
-
 }

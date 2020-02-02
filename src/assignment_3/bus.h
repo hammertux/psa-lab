@@ -24,12 +24,10 @@ class Bus : public Bus_if, public sc_module {
         sc_port<Bus_slave_if> memory;
         sc_port<sc_signal_inout_if<bus_sig_t>> port_bus_inout;
         sc_port<sc_signal_inout_if<bus_sig_t>> port_c2c_inout;
-        sc_port<sc_signal_inout_if<bus_sig_t>> port_advertise_inout;
 
         SC_CTOR(Bus) : current_req(nullptr){
             
             SC_CTHREAD(execute, port_clk.neg());
-            //dont_initialize();
             sensitive << port_clk.neg();
             last_queue_size = 0;
             old_tail = bus_sig_t();

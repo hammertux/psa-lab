@@ -60,7 +60,7 @@ int sc_main(int argc, char* argv[])
 
         // Print statistics after simulation finished
         stats_print();
-        std::cout << "Total Memory Accesses = " << mem->mem_access_rates << std::endl;
+        std::cout << "Total Memory Reads = " << mem->mem_read_access_rates << " Total Memory Writes = " << mem->mem_write_access_rates << std::endl;
         std::cout << "Average Bus Acquisition Time = " << (arbiter->get_cumulative_time() / arbiter->get_total_reqs()) << std::endl;
         std::cout << "Total Simulation Time = " << sc_time_stamp() << std::endl;
 
